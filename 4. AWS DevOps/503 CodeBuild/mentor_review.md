@@ -20,4 +20,3 @@
 # Sources
 
 - ChatGPT
-- GitHub Repository (https://github.com/viraldobariya/AWS-SAA-Notes)

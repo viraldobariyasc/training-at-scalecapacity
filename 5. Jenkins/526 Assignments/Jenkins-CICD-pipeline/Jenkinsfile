@@ -1,0 +1,73 @@
+pipeline {
+
+    agent { label 'linux' }
+
+    environment {
+        DEPLOY_HOST = '18.206.177.187'
+        DEPLOY_USER = 'ubuntu'
+        DEPLOY_PATH = '/opt/sample-java-api'
+    }
+
+    stages {
+
+        stage('Build') {
+            steps {
+                sh '''
+                    set -e
+                    mvn clean package
+                '''
+            }
+        }
+
+        stage('Archive') {
+            steps {
+                archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sshagent(credentials: ['deployment-server']) {
+                    sh '''
+                        set -e
+
+                        scp -o StrictHostKeyChecking=no \
+                            target/*.jar \
+                            $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/sample-api.jar
+
+                        ssh -o StrictHostKeyChecking=no \
+                            $DEPLOY_USER@$DEPLOY_HOST \
+                            "sudo systemctl restart sample-java-api"
+                    '''
+                }
+            }
+        }
+
+        stage('Health Check') {
+            steps {
+                sh '''
+                    set -e
+
+                    sleep 10
+
+                    curl --fail http://$DEPLOY_HOST:8080/
+                '''
+            }
+        }
+    }
+
+    post {
+
+        success {
+            echo 'Deployment Successful!'
+        }
+
+        failure {
+            echo 'Deployment Failed!'
+        }
+
+        always {
+            cleanWs()
+        }
+    }
+}
