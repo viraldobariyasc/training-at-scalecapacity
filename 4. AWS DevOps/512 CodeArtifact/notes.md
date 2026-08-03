@@ -11,7 +11,7 @@ Examples:
 - ZIP
 - npm package
 - Python package
-- NuGet package
+- NuGet package 
 - Docker Image (stored in ECR, not CodeArtifact)
 
 Example:
