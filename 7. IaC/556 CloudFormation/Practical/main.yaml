@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 3-tier architecture implemented with nested CloudFormation stacks
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: demo
+  TemplateBucket:
+    Type: String
+    Default: my-cloudformation-templates
+  TemplatePrefix:
+    Type: String
+    Default: three-tier
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+  AlbCidr1:
+    Type: String
+    Default: 10.0.0.0/24
+  AlbCidr2:
+    Type: String
+    Default: 10.0.1.0/24
+  Ec2Cidr1:
+    Type: String
+    Default: 10.0.50.0/24
+  Ec2Cidr2:
+    Type: String
+    Default: 10.0.51.0/24
+  RdsCidr1:
+    Type: String
+    Default: 10.0.100.0/24
+  RdsCidr2:
+    Type: String
+    Default: 10.0.101.0/24
+  KeyPairName:
+    Type: String
+    Default: demo-key-pair
+  ImageId:
+    Type: String
+    Default: ami-0c02fb55956c7d316
+  DbUsername:
+    Type: String
+    Default: admin
+  DbPassword:
+    Type: String
+    Default: Password123!
+    NoEcho: true
+
+Resources:
+  VpcStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${TemplateBucket}.s3.${AWS::Region}.amazonaws.com/${TemplatePrefix}/modules/vpc/template.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        VpcCidr: !Ref VpcCidr
+        AlbCidr1: !Ref AlbCidr1
+        AlbCidr2: !Ref AlbCidr2
+        Ec2Cidr1: !Ref Ec2Cidr1
+        Ec2Cidr2: !Ref Ec2Cidr2
+        RdsCidr1: !Ref RdsCidr1
+        RdsCidr2: !Ref RdsCidr2
+      TimeoutInMinutes: 30
+
+  AlbStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: VpcStack
+    Properties:
+      TemplateURL: !Sub https://${TemplateBucket}.s3.${AWS::Region}.amazonaws.com/${TemplatePrefix}/modules/alb/template.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        VpcId: !GetAtt VpcStack.Outputs.VpcId
+        AlbSubnetIds: !GetAtt VpcStack.Outputs.AlbSubnetIds
+      TimeoutInMinutes: 30
+
+  Ec2Stack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - VpcStack
+      - AlbStack
+    Properties:
+      TemplateURL: !Sub https://${TemplateBucket}.s3.${AWS::Region}.amazonaws.com/${TemplatePrefix}/modules/ec2/template.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        VpcId: !GetAtt VpcStack.Outputs.VpcId
+        AlbSecurityGroupId: !GetAtt AlbStack.Outputs.AlbSecurityGroupId
+        KeyPairName: !Ref KeyPairName
+        ImageId: !Ref ImageId
+      TimeoutInMinutes: 30
+
+  RdsStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - VpcStack
+      - Ec2Stack
+    Properties:
+      TemplateURL: !Sub https://${TemplateBucket}.s3.${AWS::Region}.amazonaws.com/${TemplatePrefix}/modules/rds/template.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        VpcId: !GetAtt VpcStack.Outputs.VpcId
+        Ec2SecurityGroupId: !GetAtt Ec2Stack.Outputs.Ec2SecurityGroupId
+        RdsSubnetIds: !GetAtt VpcStack.Outputs.RdsSubnetIds
+        DbUsername: !Ref DbUsername
+        DbPassword: !Ref DbPassword
+      TimeoutInMinutes: 30
+
+  AsgStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - Ec2Stack
+      - AlbStack
+    Properties:
+      TemplateURL: !Sub https://${TemplateBucket}.s3.${AWS::Region}.amazonaws.com/${TemplatePrefix}/modules/asg/template.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        LaunchTemplateId: !GetAtt Ec2Stack.Outputs.LaunchTemplateId
+        Ec2SubnetIds: !GetAtt VpcStack.Outputs.Ec2SubnetIds
+        TargetGroupArn: !GetAtt AlbStack.Outputs.TargetGroupArn
+      TimeoutInMinutes: 30
+
+Outputs:
+  VpcId:
+    Value: !GetAtt VpcStack.Outputs.VpcId
+  AlbDnsName:
+    Value: !GetAtt AlbStack.Outputs.AlbDnsName
+  RdsEndpoint:
+    Value: !GetAtt RdsStack.Outputs.RdsEndpoint

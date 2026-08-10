@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: RDS module for a 3-tier architecture
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: demo
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  Ec2SecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+  RdsSubnetIds:
+    Type: CommaDelimitedList
+  DbUsername:
+    Type: String
+  DbPassword:
+    Type: String
+    NoEcho: true
+
+Resources:
+  RdsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow MySQL from the web tier
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref Ec2SecurityGroupId
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-rds-sg
+
+  RdsSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS
+      SubnetIds: !Ref RdsSubnetIds
+      DBSubnetGroupName: !Sub ${EnvironmentName}-db-subnet-group
+
+  DatabaseInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub ${EnvironmentName}-db
+      DBInstanceClass: db.t3.micro
+      Engine: mysql
+      MasterUsername: !Ref DbUsername
+      MasterUserPassword: !Ref DbPassword
+      AllocatedStorage: 20
+      DBSubnetGroupName: !Ref RdsSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RdsSecurityGroup
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+      MultiAZ: false
+
+Outputs:
+  RdsEndpoint:
+    Value: !GetAtt DatabaseInstance.Endpoint.Address
